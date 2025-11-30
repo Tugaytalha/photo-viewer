@@ -10,7 +10,10 @@ const SettingsPanel = ({
     quietHoursEnd,
     onQuietHoursEndChange,
     showMetadata,
-    onShowMetadataChange
+    onShowMetadataChange,
+    showFavoritesOnly,
+    onShowFavoritesOnlyChange,
+    onResetSettings
 }) => {
     if (!isOpen) return null;
 
@@ -76,6 +79,35 @@ const SettingsPanel = ({
                             />
                             Show Metadata Overlay
                         </label>
+                    </div>
+
+                    <div className="setting-group">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={showFavoritesOnly}
+                                onChange={(e) => onShowFavoritesOnlyChange(e.target.checked)}
+                                style={{ width: 'auto' }}
+                            />
+                            Show Favorites Only
+                        </label>
+                    </div>
+
+                    <div className="setting-group" style={{ marginTop: '20px', borderTop: '1px solid #444', paddingTop: '20px' }}>
+                        <button
+                            onClick={onResetSettings}
+                            style={{
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                padding: '10px 20px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                width: '100%'
+                            }}
+                        >
+                            Reset All Settings
+                        </button>
                     </div>
                 </div>
             </div>
