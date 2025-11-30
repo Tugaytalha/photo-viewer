@@ -1,20 +1,17 @@
 const { useState, useEffect, useCallback } = React;
 
-```javascript
-const { useState, useEffect, useCallback } = React;
-
-// Helper to verify if a file is an image
 const isImageFile = (file) => {
     return file.type.startsWith('image/');
 };
 
-const usePhotoLibrary = (excludedPatterns = []) => {
+const usePhotoLibrary = (excludedPatterns = [], favorites = [], showFavoritesOnly = false) => {
     const [photos, setPhotos] = useState([]);
     const [allPhotos, setAllPhotos] = useState([]); // Store all found photos
     const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
     const [directoryHandle, setDirectoryHandle] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [corruptFilenames, setCorruptFilenames] = useState([]);
 
     const [isShuffle, setIsShuffle] = useState(() => {
         return localStorage.getItem('isShuffle') === 'true';
@@ -47,8 +44,6 @@ const usePhotoLibrary = (excludedPatterns = []) => {
         if (isShuffle && photos.length > 0) {
             setShuffledIndices(generateShuffledIndices(photos.length));
         } else if (!isShuffle) {
-            // If shuffle is turned off, clear shuffled indices or reset to sequential
-            // For now, we'll clear them, and navigation will revert to sequential
             setShuffledIndices([]);
         }
     }, [photos.length, isShuffle, generateShuffledIndices]);
@@ -58,10 +53,10 @@ const usePhotoLibrary = (excludedPatterns = []) => {
         try {
             setIsLoading(true);
             setError(null);
-            
+
             const handle = await window.showDirectoryPicker();
             setDirectoryHandle(handle);
-            
+
             const imageFiles = [];
             for await (const entry of handle.values()) {
                 if (entry.kind === 'file') {
@@ -76,17 +71,16 @@ const usePhotoLibrary = (excludedPatterns = []) => {
                     }
                 }
             }
-            
+
             if (imageFiles.length === 0) {
                 setError("No images found in the selected folder.");
                 setPhotos([]);
                 setAllPhotos([]);
                 return;
             }
-            
+
             setAllPhotos(imageFiles);
-            // Filtering will happen in useEffect below
-            
+
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error("Error selecting folder:", err);
@@ -102,41 +96,70 @@ const usePhotoLibrary = (excludedPatterns = []) => {
         if (allPhotos.length === 0) return;
 
         const filtered = allPhotos.filter(photo => {
-            return !excludedPatterns.some(pattern => photo.name.toLowerCase().includes(pattern.toLowerCase()));
+            const isExcluded = excludedPatterns.some(pattern => photo.name.toLowerCase().includes(pattern.toLowerCase()));
+            if (isExcluded) return false;
+
+            if (corruptFilenames.includes(photo.name)) return false;
+
+            if (showFavoritesOnly) {
+                return favorites.includes(photo.name);
+            }
+            return true;
         });
 
         setPhotos(filtered);
-        
-        // Reset index if out of bounds or try to maintain relative position?
-        // For simplicity, reset to 0 if current photo is filtered out
-        // Or try to find the current photo in the new list
-        
-        // Simple reset for now to avoid complexity
-        setCurrentPhotoIndex(0);
 
-    }, [allPhotos, excludedPatterns]);
+        if (currentPhotoIndex >= filtered.length) {
+            setCurrentPhotoIndex(0);
+        }
+
+    }, [allPhotos, excludedPatterns, favorites, showFavoritesOnly, corruptFilenames]);
+
+    // Preload next images
+    useEffect(() => {
+        if (photos.length === 0) return;
+
+        const preloadCount = 3;
+        const indicesToPreload = [];
+
+        if (isShuffle && shuffledIndices.length === photos.length) {
+            const currentPos = shuffledIndices.indexOf(currentPhotoIndex);
+            if (currentPos !== -1) {
+                for (let i = 1; i <= preloadCount; i++) {
+                    indicesToPreload.push(shuffledIndices[(currentPos + i) % photos.length]);
+                }
+            }
+        } else {
+            for (let i = 1; i <= preloadCount; i++) {
+                indicesToPreload.push((currentPhotoIndex + i) % photos.length);
+            }
+        }
+
+        indicesToPreload.forEach(index => {
+            if (photos[index]) {
+                const img = new Image();
+                img.src = photos[index].url;
+            }
+        });
+    }, [currentPhotoIndex, photos, isShuffle, shuffledIndices]);
 
     // Navigation
     const nextPhoto = useCallback(() => {
         setPhotos(prev => {
             if (prev.length === 0) return prev;
-            
+
             if (isShuffle) {
                 setShuffledIndices(currentShuffled => {
-                    // If we don't have shuffled indices yet, generate them
                     if (currentShuffled.length !== prev.length) {
                         currentShuffled = generateShuffledIndices(prev.length);
                     }
-                    
-                    // Find the current photo's index in the original photos array
-                    // Then find its position in the shuffled array
+
                     const currentPhotoOriginalIndex = currentPhotoIndex;
                     const currentShuffledPosition = currentShuffled.indexOf(currentPhotoOriginalIndex);
-                    
-                    // Move to next index in the shuffled array
+
                     const nextShuffledPosition = (currentShuffledPosition + 1) % currentShuffled.length;
                     setCurrentPhotoIndex(currentShuffled[nextShuffledPosition]);
-                    
+
                     return currentShuffled;
                 });
             } else {
@@ -144,24 +167,24 @@ const usePhotoLibrary = (excludedPatterns = []) => {
             }
             return prev;
         });
-    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]); // Added currentPhotoIndex to dependencies
+    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]);
 
     const prevPhoto = useCallback(() => {
         setPhotos(prev => {
             if (prev.length === 0) return prev;
 
             if (isShuffle) {
-                 setShuffledIndices(currentShuffled => {
+                setShuffledIndices(currentShuffled => {
                     if (currentShuffled.length !== prev.length) {
                         currentShuffled = generateShuffledIndices(prev.length);
                     }
 
                     const currentPhotoOriginalIndex = currentPhotoIndex;
                     const currentShuffledPosition = currentShuffled.indexOf(currentPhotoOriginalIndex);
-                    
+
                     const prevShuffledPosition = (currentShuffledPosition - 1 + currentShuffled.length) % currentShuffled.length;
                     setCurrentPhotoIndex(currentShuffled[prevShuffledPosition]);
-                    
+
                     return currentShuffled;
                 });
             } else {
@@ -169,10 +192,15 @@ const usePhotoLibrary = (excludedPatterns = []) => {
             }
             return prev;
         });
-    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]); // Added currentPhotoIndex to dependencies
+    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]);
 
     const toggleShuffle = useCallback(() => {
         setIsShuffle(prev => !prev);
+    }, []);
+
+    const markAsCorrupt = useCallback((filename) => {
+        console.warn(`Marking ${filename} as corrupt/unloadable.`);
+        setCorruptFilenames(prev => [...prev, filename]);
     }, []);
 
     return {
@@ -186,10 +214,9 @@ const usePhotoLibrary = (excludedPatterns = []) => {
         prevPhoto,
         totalPhotos: photos.length,
         isShuffle,
-        toggleShuffle
+        toggleShuffle,
+        markAsCorrupt
     };
 };
 
-// Export globally for the no-build environment
 window.usePhotoLibrary = usePhotoLibrary;
-```
