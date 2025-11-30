@@ -10,6 +10,16 @@ const SettingsPanel = window.SettingsPanel;
 function App() {
     const [excludedPatterns, setExcludedPatterns] = useState([]);
 
+    // Favorites
+    const [favorites, setFavorites] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('favorites')) || [];
+        } catch {
+            return [];
+        }
+    });
+    const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+
     const {
         photos,
         currentPhoto,
@@ -19,8 +29,9 @@ function App() {
         error,
         isLoading,
         isShuffle,
-        toggleShuffle
-    } = usePhotoLibrary(excludedPatterns); // Pass patterns to hook
+        toggleShuffle,
+        markAsCorrupt
+    } = usePhotoLibrary(excludedPatterns, favorites, showFavoritesOnly);
 
     const [isPlaying, setIsPlaying] = useState(false);
     const [intervalDuration, setIntervalDuration] = useState(5000);
@@ -30,6 +41,75 @@ function App() {
     const [displayMode, setDisplayMode] = useState('fit'); // 'fit', 'fill', 'original'
     const [kenBurnsEnabled, setKenBurnsEnabled] = useState(true);
     const [showMetadata, setShowMetadata] = useState(false);
+
+    // Per-photo framing
+    const [isEditingFraming, setIsEditingFraming] = useState(false);
+    const [photoSettings, setPhotoSettings] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('photoSettings')) || {};
+        } catch {
+            return {};
+        }
+    });
+
+    useEffect(() => {
+        localStorage.setItem('photoSettings', JSON.stringify(photoSettings));
+    }, [photoSettings]);
+
+    useEffect(() => {
+        localStorage.setItem('favorites', JSON.stringify(favorites));
+    }, [favorites]);
+
+    const handleUpdatePhotoSettings = (photoName, settings) => {
+        setPhotoSettings(prev => ({
+            ...prev,
+            [photoName]: settings
+        }));
+    };
+
+    const toggleEditingFraming = () => {
+        setIsEditingFraming(prev => !prev);
+        if (!isEditingFraming) {
+            setIsPlaying(false); // Pause when starting to edit
+        }
+    };
+
+    const toggleFavorite = () => {
+        if (!currentPhoto) return;
+        setFavorites(prev => {
+            if (prev.includes(currentPhoto.name)) {
+                return prev.filter(name => name !== currentPhoto.name);
+            } else {
+                return [...prev, currentPhoto.name];
+            }
+        });
+    };
+
+    const handlePhotoError = useCallback(() => {
+        if (currentPhoto) {
+            markAsCorrupt(currentPhoto.name);
+        }
+    }, [currentPhoto, markAsCorrupt]);
+
+    const resetSettings = () => {
+        if (window.confirm("Are you sure you want to reset all settings, favorites, and custom framing? This cannot be undone.")) {
+            localStorage.removeItem('photoSettings');
+            localStorage.removeItem('favorites');
+            localStorage.removeItem('isShuffle');
+            localStorage.removeItem('lastPhotoName');
+
+            setPhotoSettings({});
+            setFavorites([]);
+            setExcludedPatterns([]);
+            setQuietHoursStart('');
+            setQuietHoursEnd('');
+            setShowMetadata(false);
+            setDisplayMode('fit');
+            setKenBurnsEnabled(true);
+
+            window.location.reload(); // Reload to ensure clean state for hooks
+        }
+    };
 
     // Scheduling
     const [quietHoursStart, setQuietHoursStart] = useState('');
@@ -142,6 +222,10 @@ function App() {
                     displayMode={displayMode}
                     kenBurnsEnabled={kenBurnsEnabled}
                     showMetadata={showMetadata}
+                    isEditingFraming={isEditingFraming}
+                    photoSettings={photoSettings}
+                    onUpdatePhotoSettings={handleUpdatePhotoSettings}
+                    onError={handlePhotoError}
                 />
             ) : (
                 <div style={{
@@ -202,6 +286,10 @@ function App() {
                     kenBurnsEnabled={kenBurnsEnabled}
                     onToggleKenBurns={toggleKenBurns}
                     onToggleFullscreen={toggleFullscreen}
+                    isEditingFraming={isEditingFraming}
+                    onToggleEditingFraming={toggleEditingFraming}
+                    isFavorite={currentPhoto && favorites.includes(currentPhoto.name)}
+                    onToggleFavorite={toggleFavorite}
                 />
             )}
 
@@ -218,6 +306,9 @@ function App() {
                 onQuietHoursEndChange={setQuietHoursEnd}
                 showMetadata={showMetadata}
                 onShowMetadataChange={setShowMetadata}
+                showFavoritesOnly={showFavoritesOnly}
+                onShowFavoritesOnlyChange={setShowFavoritesOnly}
+                onResetSettings={resetSettings}
             />
         </div>
     );
