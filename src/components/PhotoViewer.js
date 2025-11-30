@@ -1,13 +1,11 @@
-const { motion, AnimatePresence } = window.Motion;
-
-const PhotoViewer = ({ photo, isPlaying, interval = 5000 }) => {
+const PhotoViewer = ({ photo, isPlaying, interval = 5000, displayMode = 'fit', kenBurnsEnabled = true }) => {
     if (!photo) return null;
 
     // Ken Burns effect variants
     const variants = {
         enter: {
             opacity: 0,
-            scale: 1.1,
+            scale: kenBurnsEnabled ? 1.1 : 1,
         },
         center: {
             zIndex: 1,
@@ -15,13 +13,22 @@ const PhotoViewer = ({ photo, isPlaying, interval = 5000 }) => {
             scale: 1,
             transition: {
                 opacity: { duration: 1 },
-                scale: { duration: interval / 1000, ease: "linear" } // Slow zoom out
+                scale: kenBurnsEnabled ? { duration: interval / 1000, ease: "linear" } : { duration: 0 }
             }
         },
         exit: {
             zIndex: 0,
             opacity: 0,
             transition: { duration: 1 }
+        }
+    };
+
+    const getObjectFit = () => {
+        switch (displayMode) {
+            case 'fill': return 'cover';
+            case 'original': return 'none';
+            case 'fit':
+            default: return 'contain';
         }
     };
 
@@ -48,7 +55,7 @@ const PhotoViewer = ({ photo, isPlaying, interval = 5000 }) => {
                         position: 'absolute',
                         width: '100%',
                         height: '100%',
-                        objectFit: 'contain', // Default to fit, can be configurable
+                        objectFit: getObjectFit(),
                     }}
                 />
             </AnimatePresence>

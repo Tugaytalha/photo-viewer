@@ -1,5 +1,8 @@
 const { useState, useEffect, useCallback } = React;
 
+```javascript
+const { useState, useEffect, useCallback } = React;
+
 // Helper to verify if a file is an image
 const isImageFile = (file) => {
     return file.type.startsWith('image/');
@@ -12,20 +15,53 @@ const usePhotoLibrary = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
+    const [isShuffle, setIsShuffle] = useState(() => {
+        return localStorage.getItem('isShuffle') === 'true';
+    });
+    const [shuffledIndices, setShuffledIndices] = useState([]);
+
+    // Persistence: Save state when it changes
+    useEffect(() => {
+        localStorage.setItem('isShuffle', isShuffle);
+    }, [isShuffle]);
+
+    useEffect(() => {
+        if (currentPhotoIndex >= 0 && photos.length > 0) {
+            localStorage.setItem('lastPhotoName', photos[currentPhotoIndex].name);
+        }
+    }, [currentPhotoIndex, photos]);
+
+    // Shuffle helper
+    const generateShuffledIndices = useCallback((count) => {
+        const indices = Array.from({ length: count }, (_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        return indices;
+    }, []);
+
+    // Update shuffled indices when photos change or shuffle is toggled
+    useEffect(() => {
+        if (isShuffle && photos.length > 0) {
+            setShuffledIndices(generateShuffledIndices(photos.length));
+        } else if (!isShuffle) {
+            // If shuffle is turned off, clear shuffled indices or reset to sequential
+            // For now, we'll clear them, and navigation will revert to sequential
+            setShuffledIndices([]);
+        }
+    }, [photos.length, isShuffle, generateShuffledIndices]);
+
     // Function to select a folder
     const selectFolder = useCallback(async () => {
         try {
             setIsLoading(true);
             setError(null);
-
-            // Request directory handle
+            
             const handle = await window.showDirectoryPicker();
             setDirectoryHandle(handle);
-
+            
             const imageFiles = [];
-
-            // Recursively scan for images (optional, currently flat scan for simplicity)
-            // For now, let's do a flat scan of the selected directory
             for await (const entry of handle.values()) {
                 if (entry.kind === 'file') {
                     const file = await entry.getFile();
@@ -33,20 +69,31 @@ const usePhotoLibrary = () => {
                         imageFiles.push({
                             file,
                             name: entry.name,
-                            url: URL.createObjectURL(file), // Create object URL for display
+                            url: URL.createObjectURL(file),
                             handle: entry
                         });
                     }
                 }
             }
-
+            
             if (imageFiles.length === 0) {
                 setError("No images found in the selected folder.");
+                setPhotos([]); // Clear photos if none found
+                return;
             }
-
+            
             setPhotos(imageFiles);
-            setCurrentPhotoIndex(0);
 
+            // Resume logic: Try to find the last played photo
+            const lastPhotoName = localStorage.getItem('lastPhotoName');
+            const lastIndex = imageFiles.findIndex(p => p.name === lastPhotoName);
+            
+            if (lastIndex !== -1) {
+                setCurrentPhotoIndex(lastIndex);
+            } else {
+                setCurrentPhotoIndex(0);
+            }
+            
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error("Error selecting folder:", err);
@@ -61,17 +108,59 @@ const usePhotoLibrary = () => {
     const nextPhoto = useCallback(() => {
         setPhotos(prev => {
             if (prev.length === 0) return prev;
-            setCurrentPhotoIndex(curr => (curr + 1) % prev.length);
-            return prev; // Return same array reference to avoid re-renders if not needed
+            
+            if (isShuffle) {
+                setShuffledIndices(currentShuffled => {
+                    // If we don't have shuffled indices yet, generate them
+                    if (currentShuffled.length !== prev.length) {
+                        currentShuffled = generateShuffledIndices(prev.length);
+                    }
+                    
+                    // Find the current photo's index in the original photos array
+                    // Then find its position in the shuffled array
+                    const currentPhotoOriginalIndex = currentPhotoIndex;
+                    const currentShuffledPosition = currentShuffled.indexOf(currentPhotoOriginalIndex);
+                    
+                    // Move to next index in the shuffled array
+                    const nextShuffledPosition = (currentShuffledPosition + 1) % currentShuffled.length;
+                    setCurrentPhotoIndex(currentShuffled[nextShuffledPosition]);
+                    
+                    return currentShuffled;
+                });
+            } else {
+                setCurrentPhotoIndex(curr => (curr + 1) % prev.length);
+            }
+            return prev;
         });
-    }, []);
+    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]); // Added currentPhotoIndex to dependencies
 
     const prevPhoto = useCallback(() => {
         setPhotos(prev => {
             if (prev.length === 0) return prev;
-            setCurrentPhotoIndex(curr => (curr - 1 + prev.length) % prev.length);
+
+            if (isShuffle) {
+                 setShuffledIndices(currentShuffled => {
+                    if (currentShuffled.length !== prev.length) {
+                        currentShuffled = generateShuffledIndices(prev.length);
+                    }
+
+                    const currentPhotoOriginalIndex = currentPhotoIndex;
+                    const currentShuffledPosition = currentShuffled.indexOf(currentPhotoOriginalIndex);
+                    
+                    const prevShuffledPosition = (currentShuffledPosition - 1 + currentShuffled.length) % currentShuffled.length;
+                    setCurrentPhotoIndex(currentShuffled[prevShuffledPosition]);
+                    
+                    return currentShuffled;
+                });
+            } else {
+                setCurrentPhotoIndex(curr => (curr - 1 + prev.length) % prev.length);
+            }
             return prev;
         });
+    }, [isShuffle, generateShuffledIndices, currentPhotoIndex]); // Added currentPhotoIndex to dependencies
+
+    const toggleShuffle = useCallback(() => {
+        setIsShuffle(prev => !prev);
     }, []);
 
     return {
@@ -83,9 +172,12 @@ const usePhotoLibrary = () => {
         selectFolder,
         nextPhoto,
         prevPhoto,
-        totalPhotos: photos.length
+        totalPhotos: photos.length,
+        isShuffle,
+        toggleShuffle
     };
 };
 
 // Export globally for the no-build environment
 window.usePhotoLibrary = usePhotoLibrary;
+```
