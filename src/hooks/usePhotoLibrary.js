@@ -8,8 +8,9 @@ const isImageFile = (file) => {
     return file.type.startsWith('image/');
 };
 
-const usePhotoLibrary = () => {
+const usePhotoLibrary = (excludedPatterns = []) => {
     const [photos, setPhotos] = useState([]);
+    const [allPhotos, setAllPhotos] = useState([]); // Store all found photos
     const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
     const [directoryHandle, setDirectoryHandle] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -78,21 +79,13 @@ const usePhotoLibrary = () => {
             
             if (imageFiles.length === 0) {
                 setError("No images found in the selected folder.");
-                setPhotos([]); // Clear photos if none found
+                setPhotos([]);
+                setAllPhotos([]);
                 return;
             }
             
-            setPhotos(imageFiles);
-
-            // Resume logic: Try to find the last played photo
-            const lastPhotoName = localStorage.getItem('lastPhotoName');
-            const lastIndex = imageFiles.findIndex(p => p.name === lastPhotoName);
-            
-            if (lastIndex !== -1) {
-                setCurrentPhotoIndex(lastIndex);
-            } else {
-                setCurrentPhotoIndex(0);
-            }
+            setAllPhotos(imageFiles);
+            // Filtering will happen in useEffect below
             
         } catch (err) {
             if (err.name !== 'AbortError') {
@@ -103,6 +96,25 @@ const usePhotoLibrary = () => {
             setIsLoading(false);
         }
     }, []);
+
+    // Apply filters
+    useEffect(() => {
+        if (allPhotos.length === 0) return;
+
+        const filtered = allPhotos.filter(photo => {
+            return !excludedPatterns.some(pattern => photo.name.toLowerCase().includes(pattern.toLowerCase()));
+        });
+
+        setPhotos(filtered);
+        
+        // Reset index if out of bounds or try to maintain relative position?
+        // For simplicity, reset to 0 if current photo is filtered out
+        // Or try to find the current photo in the new list
+        
+        // Simple reset for now to avoid complexity
+        setCurrentPhotoIndex(0);
+
+    }, [allPhotos, excludedPatterns]);
 
     // Navigation
     const nextPhoto = useCallback(() => {
